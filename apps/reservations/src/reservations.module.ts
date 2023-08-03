@@ -8,6 +8,7 @@ import {
   AUTH_SERVICE,
   PAYMENTS_SERVICE,
   HealthModule,
+  RmqModule,
 } from '@app/common';
 import { ReservationsRepository } from './reservations.repository';
 import {
@@ -35,30 +36,38 @@ import { ClientsModule, Transport } from '@nestjs/microservices';
         PAYMENTS_PORT: Joi.number().required(),
       }),
     }),
-    ClientsModule.registerAsync([
+    RmqModule.register([
       {
         name: AUTH_SERVICE,
-        useFactory: (configService: ConfigService) => ({
-          transport: Transport.RMQ,
-          options: {
-            urls: [configService.getOrThrow<string>('RABBITMQ_URI')],
-            queue: 'auth',
-          },
-        }),
-        inject: [ConfigService],
       },
       {
         name: PAYMENTS_SERVICE,
-        useFactory: (configService: ConfigService) => ({
-          transport: Transport.RMQ,
-          options: {
-            urls: [configService.getOrThrow<string>('RABBITMQ_URI')],
-            queue: 'payments',
-          },
-        }),
-        inject: [ConfigService],
       },
     ]),
+    // ClientsModule.registerAsync([
+    //   {
+    //     name: AUTH_SERVICE,
+    //     useFactory: (configService: ConfigService) => ({
+    //       transport: Transport.RMQ,
+    //       options: {
+    //         urls: [configService.getOrThrow<string>('RABBITMQ_URI')],
+    //         queue: 'auth',
+    //       },
+    //     }),
+    //     inject: [ConfigService],
+    //   },
+    //   {
+    //     name: PAYMENTS_SERVICE,
+    //     useFactory: (configService: ConfigService) => ({
+    //       transport: Transport.RMQ,
+    //       options: {
+    //         urls: [configService.getOrThrow<string>('RABBITMQ_URI')],
+    //         queue: 'payments',
+    //       },
+    //     }),
+    //     inject: [ConfigService],
+    //   },
+    // ]),
     HealthModule,
   ],
   controllers: [ReservationsController],

@@ -1,19 +1,16 @@
-import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
-import { Transport } from '@nestjs/microservices';
+import { RmqOptions } from '@nestjs/microservices';
 import { Logger } from 'nestjs-pino';
 import { NotificationsModule } from './notifications.module';
+import { RmqService } from '@app/common';
 
 async function bootstrap() {
   const app = await NestFactory.create(NotificationsModule);
-  const configService = app.get(ConfigService);
-  app.connectMicroservice({
-    transport: Transport.RMQ,
-    options: {
-      urls: [configService.getOrThrow('RABBITMQ_URI')],
-      queue: 'notifications',
-    },
-  });
+
+  const rmqService = app.get<RmqService>(RmqService);
+  app.connectMicroservice<RmqOptions>(
+    rmqService.getOptions('notifications', true),
+  );
   app.useLogger(app.get(Logger));
   await app.startAllMicroservices();
 }

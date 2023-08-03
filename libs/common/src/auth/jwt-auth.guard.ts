@@ -24,13 +24,7 @@ export class JwtAuthGuard implements CanActivate {
   canActivate(
     context: ExecutionContext,
   ): boolean | Promise<boolean> | Observable<boolean> {
-    const jwt =
-      context.switchToHttp().getRequest().cookies?.Authentication ||
-      context.switchToHttp().getRequest().headers?.authentication;
-
-    if (!jwt) {
-      return false;
-    }
+    const jwt = this.getAuthentication(context);
 
     const roles = this.reflector.get<string[]>('roles', context.getHandler());
 
@@ -48,7 +42,7 @@ export class JwtAuthGuard implements CanActivate {
               }
             }
           }
-          context.switchToHttp().getRequest().user = res;
+          this.addUser(res, context);
         }),
         map(() => true),
         catchError((err) => {
@@ -56,5 +50,28 @@ export class JwtAuthGuard implements CanActivate {
           return of(false);
         }),
       );
+  }
+  private getAuthentication(context: ExecutionContext) {
+    let authentication: string;
+    if (context.getType() === 'rpc') {
+      authentication = context.switchToRpc().getData().Authentication;
+    } else if (context.getType() === 'http') {
+      authentication =
+        context.switchToHttp().getRequest().cookies?.Authentication ||
+        context.switchToHttp().getRequest().headers?.authentication;
+    }
+    if (!authentication) {
+      throw new UnauthorizedException(
+        'No value was provided for Authentication',
+      );
+    }
+    return authentication;
+  }
+  private addUser(user: any, context: ExecutionContext) {
+    if (context.getType() === 'rpc') {
+      context.switchToRpc().getData().user = user;
+    } else if (context.getType() === 'http') {
+      context.switchToHttp().getRequest().user = user;
+    }
   }
 }

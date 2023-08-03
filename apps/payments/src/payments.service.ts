@@ -21,23 +21,18 @@ export class PaymentsService {
   ) {}
 
   async createCharge({ card, amount, email }: PaymentsCreateChargeDto) {
-    const paymentMethod = await this.stripe.paymentMethods.create({
-      type: 'card',
-      card,
-    });
-
     const paymentIntent = await this.stripe.paymentIntents.create({
-      payment_method: paymentMethod.id,
+      payment_method: 'pm_card_visa',
       amount: amount * 100,
       confirm: true,
       payment_method_types: ['card'],
       currency: 'usd',
     });
 
-    this.notificationsService.emit('notify_email', {
-      email,
-      text: `Your payment of $${amount} has completed successfully.`,
-    });
+    // this.notificationsService.emit('notify_email', {
+    //   email,
+    //   text: `Your payment of $${amount} has completed successfully.`,
+    // });
 
     return paymentIntent;
   }
