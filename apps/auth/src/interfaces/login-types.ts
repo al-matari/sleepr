@@ -153,3 +153,16 @@ export interface CreateRequest {
   service: LoginServiceTypes;
   tokens: { [key: string]: string };
 }
+
+export interface LoginResponse {
+  session: Session | undefined;
+  user: User | undefined;
+}
+
+export interface LogoutRequest {
+  sessionId: string;
+}
+
+export interface CreateResponse {
+  activationLink: string;
+}

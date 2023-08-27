@@ -1,14 +1,23 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { UserEntity } from '@ultimatebackend/repository';
-import { AuthenticationError } from 'apollo-server-express';
-import * as Account from '@ultimatebackend/proto-schema/account';
-import { AccountsRpcClientService } from '@ultimatebackend/core';
+import { Injectable, Logger, UnauthorizedException, ValidationError } from '@nestjs/common';
+import * as bcrypt from 'bcryptjs';
+
+import {
+  LoginRequest,
+  CreateRequest,
+  User,
+  LoginResponse,
+  CreateResponse,
+  LoginServiceTypes,
+} from './interfaces/login-types';
+import { RpcException } from '@nestjs/microservices';
+import { NotFoundError } from 'rxjs';
+import { UsersRepository } from './users/users.repository';
 
 @Injectable()
 export class AccountsService {
   logger = new Logger(this.constructor.name);
 
-  constructor(readonly accountRpcClient: AccountsRpcClientService) {}
+  constructor(private readonly usersRepository: UsersRepository) {}
 
   /**
    * @description EventBus command to create a new user
@@ -17,10 +26,44 @@ export class AccountsService {
    * @memberOf AccountsService
    * @param input
    */
-  private async loginCmd(
-    input: Account.LoginRequest,
-  ): Promise<Account.LoginResponse> {
-    // @ts-ignore
+  private async loginCmd(cmd: LoginRequest): Promise<LoginResponse> {
+    try {
+      const condition = getLoginQuery(cmd);
+
+      const user = await this.usersRepository.findOne(condition);
+      if (!user) {
+        throw new NotFoundError('Your login credentials is incorrect');
+      }
+
+      if (cmd.service === LoginServiceTypes.Password) {
+        const passwordIsValid = await bcrypt.compare(
+          cmd.params.password,
+          user.password,
+        );
+        if (!passwordIsValid) {
+          throw new UnauthorizedException('Credentials are not valid.');
+        }
+
+        // Check if user is verified
+        const userEmail = user.emails.reduce(
+          (previousValue) => previousValue.primary === true && previousValue,
+        );
+        if (!userEmail.verified) {
+          throw new UnauthorizedException('Please verify your email address');
+        }
+      }
+
+      this.eventBus.publish(new UserLoggedInEvent(user));
+
+      return {
+        user: user as Account.User,
+        session: undefined,
+      };
+    } catch (error) {
+      this.logger.log(error);
+      throw new RpcException(error.message);
+    }
+
     try {
       const response = await this.accountRpcClient.svc
         .login(input, null)
@@ -40,10 +83,7 @@ export class AccountsService {
    * @memberOf AccountsService
    * @param input
    */
-  private async createUser(
-    input: Account.CreateRequest,
-  ): Promise<Account.CreateResponse> {
-    // @ts-ignore
+  private async createUser(input: CreateRequest): Promise<CreateResponse> {
     try {
       const response = await this.accountRpcClient.svc
         .create(input, null)
@@ -63,15 +103,13 @@ export class AccountsService {
    * @memberOf AccountsService
    * @param input
    */
-  public async validateUser(
-    input: Account.LoginRequest,
-  ): Promise<Account.User> {
+  public async validateUser(input: LoginRequest): Promise<User> {
     try {
       const result = await this.loginCmd(input);
       return result.user;
     } catch (e) {
       this.logger.log(e);
-      throw new AuthenticationError(e.message);
+      throw new Error(e.message);
     }
   }
 
@@ -84,9 +122,9 @@ export class AccountsService {
    * @param regCmd
    */
   public async validateOrCreateUser(
-    logCmd: Account.LoginRequest,
-    regCmd: Account.CreateRequest,
-  ): Promise<Account.User> {
+    logCmd: LoginRequest,
+    regCmd: CreateRequest,
+  ): Promise<User> {
     let user = null;
     await this.loginCmd(logCmd)
       .then((value) => {
@@ -107,7 +145,38 @@ export class AccountsService {
       const result = await this.loginCmd(logCmd);
       return result.user;
     } catch (e) {
-      throw new AuthenticationError(e.message);
+      throw new Error(e.message);
     }
+  }
+}
+
+function getLoginQuery(cmd: LoginRequest) {
+  if (cmd.service === LoginServiceTypes.Password) {
+    return {
+      emails: { $elemMatch: { address: cmd.params.email, primary: true } },
+    };
+  } else if (cmd.service === LoginServiceTypes.Google) {
+    return {
+      emails: { $elemMatch: { address: cmd.params.email, primary: true } },
+      'services.google.userId': cmd.params.accessToken,
+    };
+  } else if (cmd.service === LoginServiceTypes.Github) {
+    return {
+      $and: [
+        {
+          emails: { $elemMatch: { address: cmd.params.email, primary: true } },
+        },
+        { 'services.github.userId': cmd.params.userId },
+      ],
+    };
+  } else if (cmd.service === LoginServiceTypes.Facebook) {
+    return {
+      emails: { $elemMatch: { address: cmd.params.email, primary: true } },
+      'services.facebook.userId': cmd.params.userId,
+    };
+  } else {
+    return {
+      emails: { $elemMatch: { address: cmd.params.email, primary: true } },
+    };
   }
 }
